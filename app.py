@@ -1,4 +1,4 @@
-```python
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -736,4 +736,4 @@ st.markdown("""
     Pengolahan data menggunakan algoritma K-Means dan evaluasi DBI.
 </div>
 """, unsafe_allow_html=True)
-```
+
