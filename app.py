@@ -1224,52 +1224,53 @@ elif halaman == "Peta Klaster":
                     properti.get("Nama_Peta", "")
                 )
 
-            fig = px.choropleth_mapbox(
-                data_peta,
-                geojson=data_peta_json,
-                locations="_kunci",
-                featureidkey="properties._kunci",
-                color="Nama Klaster",
-                color_discrete_map=WARNA_KLASTER,
-                category_orders={
-                    "Nama Klaster": [
-                        "Klaster 1",
-                        "Klaster 2",
-                        "Klaster 3",
-                        "Belum cocok",
-                    ]
-                },
-                hover_name="Nama Wilayah",
-                hover_data={
-                    "Klaster": True,
-                    "_kunci": False,
-                    "Nama Klaster": True,
-                },
-                mapbox_style="carto-positron",
-                zoom=5.8,
-                center={
-                    "lat": -0.65,
-                    "lon": 100.65
-                },
-                opacity=0.65,
-                title="Peta Persebaran Klaster Sumatera Barat"
-            )
+fig = px.choropleth_map(
+    data_peta,
+    geojson=data_peta_json,
+    locations="_kunci",
+    featureidkey="properties._kunci",
+    color="Nama Klaster",
+    color_discrete_map=WARNA_KLASTER,
+    category_orders={
+        "Nama Klaster": [
+            "Klaster 1",
+            "Klaster 2",
+            "Klaster 3",
+            "Belum cocok",
+        ]
+    },
+    hover_name="Nama Wilayah",
+    hover_data={
+        "Klaster": True,
+        "_kunci": False,
+        "Nama Klaster": True,
+    },
+    map_style="carto-positron",
+    center={
+        "lat": -0.65,
+        "lon": 100.65
+    },
+    zoom=5.8,
+    opacity=0.65,
+    title="Peta Persebaran Klaster Sumatera Barat"
+)
 
-            fig.update_traces(
-                marker_line_width=1.2,
-                marker_line_color="#FFFFFF"
-            )
+fig.update_traces(
+    marker_line_width=1.2,
+    marker_line_color="#FFFFFF"
+)
 
-            fig.update_layout(
-                margin={"r": 0, "t": 50, "l": 0, "b": 0},
-                legend_title_text="Hasil Klaster",
-                height=650
-            )
+fig.update_layout(
+    margin={"r": 0, "t": 50, "l": 0, "b": 0},
+    legend_title_text="Hasil Klaster",
+    height=650
+)
 
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
 
             st.markdown("### Keterangan Wilayah")
 
