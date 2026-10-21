@@ -3,3 +3,6 @@ pandas
 openpyxl
 plotly
 geopandas
+shapely
+pyogrio
+fiona
