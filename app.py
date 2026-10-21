@@ -1,186 +1,126 @@
-import json
-import re
-import tempfile
-import unicodedata
-import zipfile
-from pathlib import Path
-
-import geopandas as gpd
+import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
+import geopandas as gpd
+import json
+import os
+import zipfile
+import tempfile
+import unicodedata
+import re
 
 # =========================================================
-# KONFIGURASI DASHBOARD
+# 1. KONFIGURASI DASHBOARD
 # =========================================================
+
 st.set_page_config(
-    page_title="Dashboard Klasterisasi Sumatera Barat",
+    page_title="Dashboard Sumbar",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-FILE_EXCEL = "hasil_pengolahan_kmeans_dbi_sumbar.xlsx"
-FILE_ZIP_PETA = "Provinsi Sumatera Barat-KAB_KOTA.zip"
-
 WARNA_KLASTER = {
-    "1": "#36A269",
-    "2": "#F2C94C",
-    "3": "#E45B5B",
+    1: "#2E8B57",  # Hijau
+    2: "#F2C94C",  # Kuning
+    3: "#E74C3C"   # Merah
 }
-WARNA_TIDAK_DIPILIH = "#DCE4ED"
-BIRU_TUA = "#102F50"
-BIRU = "#174A7E"
-BIRU_AKSI = "#2878B5"
+
+WARNA_BIRU = "#174A7E"
+WARNA_BIRU_MUDA = "#EAF3FB"
+
+FILE_EXCEL = "hasil_pengolahan_kmeans_dbi_sumbar.xlsx"
+FILE_SHAPEFILE_ZIP = "Provinsi Sumatera Barat-KAB_KOTA.zip"
+
+SHEET_HASIL = "Hasil_Klaster"
+SHEET_DBI = "Evaluasi_DBI"
+SHEET_PROFIL = "Profil_Klaster"
+SHEET_PCA = "Koordinat_PCA"
 
 # =========================================================
-# TAMPILAN
+# 2. TAMPILAN CSS
 # =========================================================
+
 st.markdown(
     """
     <style>
     .stApp {
-        background: #F4F7FB;
-        color: #1E293B;
-    }
-
-    [data-testid="stHeader"] {
-        background: rgba(244,247,251,.96);
+        background-color: #F5F8FC;
     }
 
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg,#102F50 0%,#174A7E 100%);
+        background-color: #EAF3FB;
     }
 
-    [data-testid="stSidebar"] * {
-        color: white;
-    }
-
-    [data-testid="stSidebar"] input {
-        color: #172033 !important;
-    }
-
-    [data-testid="stSidebar"] [data-baseweb="select"] * {
-        color: #172033;
-    }
-
-    [data-testid="stSidebar"] [data-baseweb="tag"] {
-        background: #2878B5;
-    }
-
-    .dashboard-header {
-        background: linear-gradient(135deg,#102F50 0%,#2878B5 100%);
-        color: white;
-        padding: 30px;
-        border-radius: 18px;
-        min-height: 245px;
-        box-shadow: 0 8px 24px rgba(16,47,80,.15);
-    }
-
-    .dashboard-header .eyebrow {
-        font-size: 12px;
-        letter-spacing: 2px;
-        font-weight: 700;
-        color: #D6E9FA;
-        margin-bottom: 14px;
-    }
-
-    .dashboard-header h1 {
-        color: white;
-        font-size: 30px;
-        line-height: 1.25;
-        margin: 0 0 15px 0;
-        font-weight: 800;
-    }
-
-    .dashboard-header p {
-        color: #EDF6FF;
-        font-size: 15px;
-        line-height: 1.7;
-        margin: 0;
-    }
-
-    .section-heading {
+    h1, h2, h3 {
         color: #174A7E;
-        font-size: 23px;
-        font-weight: 800;
-        margin-top: 20px;
-        margin-bottom: 5px;
     }
 
-    .section-subtitle {
-        color: #64748B;
+    .kartu {
+        background-color: white;
+        padding: 18px;
+        border-radius: 12px;
+        border-left: 5px solid #174A7E;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+        min-height: 110px;
+    }
+
+    .kartu-label {
+        color: #536579;
         font-size: 14px;
-        margin-bottom: 18px;
+        margin-bottom: 8px;
+    }
+
+    .kartu-nilai {
+        color: #174A7E;
+        font-size: 27px;
+        font-weight: bold;
+    }
+
+    .keterangan {
+        color: #536579;
+        font-size: 13px;
     }
 
     div[data-testid="stMetric"] {
-        background: white;
-        border: 1px solid #E0EAF4;
-        border-radius: 14px;
-        padding: 18px 20px;
-        box-shadow: 0 4px 14px rgba(16,47,80,.05);
+        background-color: white;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #D9E5F2;
     }
 
-    div[data-testid="stMetricLabel"] {
-        color: #64748B;
-        font-weight: 600;
-    }
-
-    div[data-testid="stMetricValue"] {
-        color: #174A7E;
-        font-weight: 800;
-    }
-
-    div[data-testid="stTabs"] button {
-        font-weight: 650;
-    }
-
-    div[data-testid="stTabs"] button[aria-selected="true"] {
-        color: #174A7E;
-    }
-
-    .info-box {
-        background: #EAF3FB;
-        border-left: 5px solid #2878B5;
-        padding: 15px 18px;
-        border-radius: 8px;
-        color: #23415F;
-        margin: 10px 0 18px 0;
-        line-height: 1.7;
-    }
-
-    .footer-box {
-        text-align: center;
-        color: #64748B;
-        font-size: 12px;
-        padding: 20px 10px;
-        margin-top: 30px;
-        border-top: 1px solid #DCE6F0;
-    }
-
-    .stDownloadButton button {
-        background: #174A7E;
-        color: white;
-        border-radius: 8px;
-        border: none;
-    }
-
-    .stDownloadButton button:hover {
-        background: #2878B5;
-        color: white;
-    }
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
 # =========================================================
-# FUNGSI BANTU
+# 3. FUNGSI PENDUKUNG
 # =========================================================
+
+def cari_kolom(data, daftar_nama):
+    """Mencari nama kolom berdasarkan beberapa kemungkinan penulisan."""
+    if data is None or data.empty:
+        return None
+
+    kolom = {str(c).strip().lower(): c for c in data.columns}
+
+    for nama in daftar_nama:
+        if nama.lower() in kolom:
+            return kolom[nama.lower()]
+
+    for nama in daftar_nama:
+        for nama_asli in data.columns:
+            if nama.lower() in str(nama_asli).strip().lower():
+                return nama_asli
+
+    return None
+
+
 def normalisasi_nama(nama):
-    """Menyamakan penulisan nama wilayah untuk pencarian dan peta."""
+    """Menyamakan penulisan nama wilayah untuk pencocokan data dan peta."""
     if pd.isna(nama):
         return ""
 
@@ -190,257 +130,244 @@ def normalisasi_nama(nama):
         karakter for karakter in nama
         if not unicodedata.combining(karakter)
     )
-    nama = re.sub(r"[^a-z0-9\s]", " ", nama)
-    nama = re.sub(r"\s+", " ", nama).strip()
 
-    # Kabupaten Agam dan Agam disamakan.
-    nama = re.sub(r"^kabupaten\s+", "", nama)
-    nama = re.sub(r"^kab\.?\s+", "", nama)
-
-    # Kota tetap dipertahankan agar Kota Solok tidak tertukar
-    # dengan Kabupaten Solok.
+    nama = re.sub(r"\s+", " ", nama)
+    nama = nama.replace("kabupaten ", "")
+    nama = nama.replace("kab. ", "")
+    nama = nama.replace("kab ", "")
     nama = nama.replace("kota sawah lunto", "kota sawahlunto")
-    nama = nama.replace("sawah lunto", "sawahlunto")
 
-    return nama
-
-
-def cari_kolom(data, kemungkinan):
-    """Mencari nama kolom meskipun penulisannya sedikit berbeda."""
-    kolom = {
-        str(c).strip().lower(): c
-        for c in data.columns
-    }
-
-    for nama in kemungkinan:
-        if nama.lower() in kolom:
-            return kolom[nama.lower()]
-
-    for kolom_asli in data.columns:
-        for nama in kemungkinan:
-            if nama.lower() in str(kolom_asli).strip().lower():
-                return kolom_asli
-
-    return None
+    return nama.strip()
 
 
-def siapkan_wilayah(data):
+def bersihkan_klaster(data):
+    """Menyamakan kolom hasil klaster menjadi Kabupaten/Kota dan Klaster."""
     data = data.copy()
 
-    pilihan = [
-        "Kabupaten/Kota",
-        "Kabupaten_Kota",
-        "kab_kota",
-        "Wilayah",
-        "Daerah",
-        "Nama Wilayah",
-    ]
-
-    kolom = cari_kolom(data, pilihan)
-
-    if kolom is None and (
-        data.index.name is not None
-        or not isinstance(data.index, pd.RangeIndex)
-    ):
-        data = data.reset_index()
-        kolom = cari_kolom(data, pilihan + ["index"])
-
-    if kolom is not None and kolom != "Kabupaten/Kota":
-        data = data.rename(
-            columns={kolom: "Kabupaten/Kota"}
-        )
-
-    return data
-
-
-def siapkan_klaster(data):
-    data = data.copy()
-
-    kolom = cari_kolom(
+    kolom_wilayah = cari_kolom(
         data,
-        ["Klaster", "Cluster", "Label Klaster", "Hasil Klaster"],
+        [
+            "Kabupaten/Kota",
+            "Kabupaten_Kota",
+            "kab_kota",
+            "nama",
+            "wilayah",
+            "daerah"
+        ]
     )
 
-    if kolom is not None and kolom != "Klaster":
-        data = data.rename(columns={kolom: "Klaster"})
+    kolom_klaster = cari_kolom(
+        data,
+        ["Klaster", "Cluster", "Cluster_Label", "label_klaster"]
+    )
 
-    if "Klaster" in data.columns:
-        data["Klaster"] = (
-            data["Klaster"]
-            .astype(str)
-            .str.extract(r"(\d+)", expand=False)
+    if kolom_wilayah is None:
+        if data.index.name is not None:
+            data = data.reset_index()
+            kolom_wilayah = cari_kolom(
+                data,
+                ["Kabupaten/Kota", "Kabupaten_Kota", "kab_kota", "nama", "wilayah"]
+            )
+
+    if kolom_wilayah is None:
+        raise ValueError(
+            "Kolom nama Kabupaten/Kota tidak ditemukan pada sheet Hasil_Klaster."
         )
+
+    if kolom_klaster is None:
+        raise ValueError(
+            "Kolom Klaster tidak ditemukan pada sheet Hasil_Klaster."
+        )
+
+    data = data.rename(
+        columns={
+            kolom_wilayah: "Kabupaten/Kota",
+            kolom_klaster: "Klaster"
+        }
+    )
+
+    data["Kabupaten/Kota"] = data["Kabupaten/Kota"].astype(str).str.strip()
+
+    data["Klaster"] = (
+        data["Klaster"]
+        .astype(str)
+        .str.extract(r"(\d+)", expand=False)
+    )
+
+    data["Klaster"] = pd.to_numeric(data["Klaster"], errors="coerce")
+    data = data.dropna(subset=["Klaster"])
+    data["Klaster"] = data["Klaster"].astype(int)
+
+    data["_kunci"] = data["Kabupaten/Kota"].apply(normalisasi_nama)
 
     return data
 
 
-def angka_id(nilai, desimal=4):
+def tampilkan_kartu(label, nilai):
+    st.markdown(
+        f"""
+        <div class="kartu">
+            <div class="kartu-label">{label}</div>
+            <div class="kartu-nilai">{nilai}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def reset_filter():
+    st.session_state["kata_cari"] = ""
+    st.session_state["pilihan_wilayah"] = st.session_state.get(
+        "semua_wilayah", []
+    )
+    st.session_state["pilihan_klaster"] = st.session_state.get(
+        "semua_klaster", []
+    )
+
+
+def format_angka(nilai, desimal=3):
     try:
-        return (
-            f"{float(nilai):,.{desimal}f}"
-            .replace(",", "X")
-            .replace(".", ",")
-            .replace("X", ".")
-        )
-    except (TypeError, ValueError):
+        return f"{float(nilai):,.{desimal}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
         return "-"
 
 
-def urut_klaster(values):
-    return sorted(
-        values,
-        key=lambda x: (
-            0, int(x)
-        ) if str(x).isdigit() else (1, str(x))
+# =========================================================
+# 4. MEMBACA DATA EXCEL
+# =========================================================
+
+@st.cache_data
+def muat_data_excel(lokasi_file):
+    excel = pd.ExcelFile(lokasi_file)
+
+    hasil = pd.read_excel(
+        lokasi_file,
+        sheet_name=SHEET_HASIL
     )
+
+    evaluasi = pd.read_excel(
+        lokasi_file,
+        sheet_name=SHEET_DBI
+    )
+
+    try:
+        profil = pd.read_excel(
+            lokasi_file,
+            sheet_name=SHEET_PROFIL
+        )
+    except Exception:
+        profil = pd.DataFrame()
+
+    try:
+        pca = pd.read_excel(
+            lokasi_file,
+            sheet_name=SHEET_PCA
+        )
+    except Exception:
+        pca = pd.DataFrame()
+
+    return hasil, evaluasi, profil, pca, excel.sheet_names
 
 
 # =========================================================
-# MEMBACA FILE EXCEL
+# 5. MEMBACA SHAPEFILE
 # =========================================================
-if not Path(FILE_EXCEL).exists():
-    st.error(
-        f"File Excel tidak ditemukan: {FILE_EXCEL}. "
-        "Pastikan file Excel berada satu folder dengan app.py."
-    )
-    st.stop()
 
-try:
-    excel = pd.ExcelFile(FILE_EXCEL)
-    daftar_sheet = excel.sheet_names
+@st.cache_data
+def muat_shapefile(lokasi_zip):
+    """Membaca shapefile kabupaten/kota dari berkas ZIP."""
+    folder_sementara = tempfile.mkdtemp(prefix="sumbar_peta_")
 
-    def baca_sheet(nama, **kwargs):
-        if nama in daftar_sheet:
-            return pd.read_excel(
-                FILE_EXCEL,
-                sheet_name=nama,
-                **kwargs,
-            )
-        return pd.DataFrame()
+    with zipfile.ZipFile(lokasi_zip, "r") as arsip:
+        arsip.extractall(folder_sementara)
 
-    data_klaster = baca_sheet("Hasil_Klaster")
-    data_dbi = baca_sheet("Evaluasi_DBI")
-    data_profil = baca_sheet("Profil_Klaster", index_col=0)
-    data_pca = baca_sheet("Koordinat_PCA")
+    berkas_shp = []
 
-except Exception as error:
-    st.error(f"Gagal membaca file Excel: {error}")
-    st.stop()
+    for akar, _, daftar_file in os.walk(folder_sementara):
+        for nama_file in daftar_file:
+            if nama_file.lower().endswith(".shp"):
+                berkas_shp.append(os.path.join(akar, nama_file))
 
-if data_klaster.empty:
-    st.error(
-        "Sheet Hasil_Klaster kosong atau tidak ditemukan. "
-        "Periksa nama sheet pada file Excel."
-    )
-    st.stop()
+    if not berkas_shp:
+        raise FileNotFoundError(
+            "Tidak ditemukan file .shp di dalam ZIP shapefile."
+        )
 
-data_klaster = siapkan_klaster(
-    siapkan_wilayah(data_klaster)
-)
-
-if (
-    "Kabupaten/Kota" not in data_klaster.columns
-    or "Klaster" not in data_klaster.columns
-):
-    st.error(
-        "Sheet Hasil_Klaster harus memiliki kolom "
-        "Kabupaten/Kota dan Klaster."
-    )
-    st.stop()
-
-data_klaster = data_klaster.dropna(
-    subset=["Kabupaten/Kota", "Klaster"]
-).copy()
-
-data_klaster["Kabupaten/Kota"] = (
-    data_klaster["Kabupaten/Kota"].astype(str).str.strip()
-)
-
-data_klaster["Klaster"] = (
-    data_klaster["Klaster"].astype(str).str.strip()
-)
-
-data_klaster = data_klaster.drop_duplicates(
-    subset=["Kabupaten/Kota"],
-    keep="first",
-)
-
-if not data_dbi.empty:
-    data_dbi.columns = [
-        str(kolom).strip()
-        for kolom in data_dbi.columns
+    # Mengutamakan shapefile batas kabupaten/kota.
+    pilihan_shp = [
+        path for path in berkas_shp
+        if "kab_kota" in os.path.basename(path).lower()
     ]
 
-if not data_profil.empty:
-    data_profil = siapkan_klaster(
-        data_profil.reset_index()
-    )
+    lokasi_shp = pilihan_shp[0] if pilihan_shp else berkas_shp[0]
 
-if not data_pca.empty:
-    data_pca = siapkan_klaster(
-        siapkan_wilayah(data_pca)
-    )
+    peta = gpd.read_file(lokasi_shp)
 
-# =========================================================
-# MENENTUKAN K OPTIMAL BERDASARKAN DBI
-# =========================================================
-kolom_k = cari_kolom(
-    data_dbi,
-    ["K", "Jumlah Klaster", "Jumlah Cluster"],
-)
+    if peta.crs is not None and peta.crs.to_epsg() != 4326:
+        peta = peta.to_crs(epsg=4326)
 
-kolom_dbi = cari_kolom(
-    data_dbi,
-    ["DBI", "Davies-Bouldin Index", "Davies Bouldin Index"],
-)
-
-k_optimal = data_klaster["Klaster"].nunique()
-dbi_terbaik = None
-
-if (
-    not data_dbi.empty
-    and kolom_k is not None
-    and kolom_dbi is not None
-):
-    data_dbi[kolom_k] = pd.to_numeric(
-        data_dbi[kolom_k],
-        errors="coerce",
-    )
-
-    data_dbi[kolom_dbi] = pd.to_numeric(
-        data_dbi[kolom_dbi],
-        errors="coerce",
-    )
-
-    data_dbi = data_dbi.dropna(
-        subset=[kolom_k, kolom_dbi]
-    )
-
-    if not data_dbi.empty:
-        terbaik = data_dbi.loc[
-            data_dbi[kolom_dbi].idxmin()
+    kolom_nama = cari_kolom(
+        peta,
+        [
+            "kab_kota",
+            "Kabupaten/Kota",
+            "WADMKK",
+            "NAMOBJ",
+            "nama",
+            "kabupaten"
         ]
-        k_optimal = int(terbaik[kolom_k])
-        dbi_terbaik = float(terbaik[kolom_dbi])
+    )
+
+    if kolom_nama is None:
+        kolom_teks = [
+            kolom for kolom in peta.columns
+            if kolom != peta.geometry.name
+            and peta[kolom].dtype == "object"
+        ]
+
+        if kolom_teks:
+            kolom_nama = kolom_teks[0]
+        else:
+            raise ValueError(
+                "Kolom nama kabupaten/kota tidak ditemukan pada shapefile."
+            )
+
+    peta = peta.rename(columns={kolom_nama: "Nama_Peta"})
+    peta["Nama_Peta"] = peta["Nama_Peta"].astype(str).str.strip()
+    peta["_kunci"] = peta["Nama_Peta"].apply(normalisasi_nama)
+
+    # Konversi ke GeoJSON untuk digunakan oleh Plotly.
+    geojson = json.loads(peta.to_json())
+
+    return peta, geojson
+
 
 # =========================================================
-# HEADER DASHBOARD
-col_logo, col_judul = st.columns([1, 5], vertical_alignment="center")
+# 6. HEADER DASHBOARD
+# =========================================================
 
-with col_logo:
+kolom_gambar, kolom_judul = st.columns(
+    [1, 5],
+    vertical_alignment="center"
+)
+
+with kolom_gambar:
     st.image(
         "https://commons.wikimedia.org/wiki/Special:FilePath/Rumah_Gadang_Suku_Minang.jpg",
-        width=110
+        width=125
     )
 
-with col_judul:
+with kolom_judul:
     st.markdown(
         """
-        <h1 style="color:#1976D2; margin-bottom:0;">
+        <h1 style="color:#174A7E; margin-bottom:0;">
             🏠 Dashboard Sumbar
         </h1>
-        <p style="font-size:18px; margin-top:4px; color:#555;">
+        <p style="font-size:19px; margin-top:5px; color:#536579;">
             Klasterisasi Indikator Sosial Ekonomi
+        </p>
+        <p style="font-size:13px; color:#65758B; margin-top:-8px;">
+            Provinsi Sumatera Barat | Algoritma K-Means | Evaluasi Davies-Bouldin Index
         </p>
         """,
         unsafe_allow_html=True
@@ -448,829 +375,878 @@ with col_judul:
 
 st.markdown("---")
 
-with kolom_judul:
-    st.markdown(
-        """
-        <div class="dashboard-header">
-            <div class="eyebrow">
-                SUMATERA BARAT • DATA ANALYTICS
-            </div>
-            <h1>Dashboard Klasterisasi Sosial Ekonomi</h1>
-            <p>
-                Eksplorasi karakteristik sosial ekonomi
-                kabupaten/kota di Provinsi Sumatera Barat
-                menggunakan algoritma K-Means dan evaluasi
-                Davies-Bouldin Index (DBI).
-            </p>
+# =========================================================
+# 7. PEMERIKSAAN FILE
+# =========================================================
+
+if not os.path.exists(FILE_EXCEL):
+    st.error(
+        f"File Excel '{FILE_EXCEL}' tidak ditemukan. "
+        "Pastikan file Excel sudah diunggah ke repositori GitHub "
+        "yang sama dengan app.py."
+    )
+    st.stop()
+
+try:
+    hasil_asli, evaluasi_dbi, profil, pca, daftar_sheet = muat_data_excel(
+        FILE_EXCEL
+    )
+    data_hasil = bersihkan_klaster(hasil_asli)
+
+except Exception as kesalahan:
+    st.error(f"Data Excel gagal dibaca: {kesalahan}")
+    st.info(
+        "Periksa nama file Excel, nama sheet, serta kolom "
+        "Kabupaten/Kota dan Klaster."
+    )
+    st.stop()
+
+# =========================================================
+# 8. MENYIAPKAN DATA EVALUASI DBI
+# =========================================================
+
+kolom_k = cari_kolom(evaluasi_dbi, ["K", "Jumlah Klaster", "Jumlah_Klaster"])
+kolom_dbi = cari_kolom(evaluasi_dbi, ["DBI", "Davies-Bouldin Index", "DBI Score"])
+
+if kolom_k is not None and kolom_dbi is not None:
+    evaluasi_dbi = evaluasi_dbi.rename(
+        columns={
+            kolom_k: "K",
+            kolom_dbi: "DBI"
+        }
+    )
+
+    evaluasi_dbi["K"] = pd.to_numeric(
+        evaluasi_dbi["K"], errors="coerce"
+    )
+
+    evaluasi_dbi["DBI"] = pd.to_numeric(
+        evaluasi_dbi["DBI"], errors="coerce"
+    )
+
+    evaluasi_dbi = evaluasi_dbi.dropna(subset=["K", "DBI"])
+    evaluasi_dbi["K"] = evaluasi_dbi["K"].astype(int)
+    evaluasi_dbi = evaluasi_dbi.sort_values("K")
+
+    if not evaluasi_dbi.empty:
+        baris_terbaik = evaluasi_dbi.loc[evaluasi_dbi["DBI"].idxmin()]
+        k_optimal = int(baris_terbaik["K"])
+        dbi_terbaik = float(baris_terbaik["DBI"])
+    else:
+        k_optimal = 3
+        dbi_terbaik = 0.6041
+else:
+    k_optimal = 3
+    dbi_terbaik = 0.6041
+
+# =========================================================
+# 9. SIDEBAR: PENCARIAN DAN FILTER
+# =========================================================
+
+st.sidebar.markdown(
+    """
+    <h2 style="color:#174A7E;">🔎 Filter Dashboard</h2>
+    """,
+    unsafe_allow_html=True
+)
+
+semua_wilayah = sorted(data_hasil["Kabupaten/Kota"].unique().tolist())
+semua_klaster = sorted(data_hasil["Klaster"].unique().tolist())
+
+st.session_state["semua_wilayah"] = semua_wilayah
+st.session_state["semua_klaster"] = semua_klaster
+
+if "kata_cari" not in st.session_state:
+    st.session_state["kata_cari"] = ""
+
+if "pilihan_wilayah" not in st.session_state:
+    st.session_state["pilihan_wilayah"] = semua_wilayah.copy()
+
+if "pilihan_klaster" not in st.session_state:
+    st.session_state["pilihan_klaster"] = semua_klaster.copy()
+
+# Menghindari pilihan state yang tidak lagi tersedia.
+st.session_state["pilihan_wilayah"] = [
+    w for w in st.session_state["pilihan_wilayah"]
+    if w in semua_wilayah
+]
+
+st.session_state["pilihan_klaster"] = [
+    k for k in st.session_state["pilihan_klaster"]
+    if k in semua_klaster
+]
+
+st.sidebar.text_input(
+    "Cari kabupaten/kota",
+    placeholder="Contoh: Agam atau Kota Padang",
+    key="kata_cari"
+)
+
+st.sidebar.multiselect(
+    "Pilih kabupaten/kota",
+    options=semua_wilayah,
+    key="pilihan_wilayah"
+)
+
+st.sidebar.multiselect(
+    "Pilih klaster",
+    options=semua_klaster,
+    format_func=lambda k: f"Klaster {k}",
+    key="pilihan_klaster"
+)
+
+st.sidebar.button(
+    "↩️ Reset pencarian dan filter",
+    on_click=reset_filter,
+    use_container_width=True
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🎨 Keterangan Klaster")
+
+for nomor, warna in WARNA_KLASTER.items():
+    st.sidebar.markdown(
+        f"""
+        <div style="display:flex; align-items:center; margin-bottom:8px;">
+            <div style="width:16px; height:16px; background:{warna};
+                        border-radius:4px; margin-right:9px;"></div>
+            <span>Klaster {nomor}</span>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
 # =========================================================
-# SIDEBAR: PENCARIAN DAN FILTER
+# 10. MENERAPKAN FILTER
 # =========================================================
-semua_wilayah = sorted(
-    data_klaster["Kabupaten/Kota"].unique()
-)
 
-semua_klaster = urut_klaster(
-    data_klaster["Klaster"].dropna().unique()
-)
+data_filter = data_hasil.copy()
 
-with st.sidebar:
-    st.markdown("## 🏠 Dashboard Sumbar")
-    st.caption("Klasterisasi indikator sosial ekonomi")
-    st.markdown("---")
+kata_cari = st.session_state["kata_cari"].strip()
 
-    st.markdown("### 🔎 Cari Kabupaten/Kota")
+if kata_cari:
+    data_filter = data_filter[
+        data_filter["Kabupaten/Kota"]
+        .str.contains(kata_cari, case=False, na=False)
+    ]
 
-    kata_cari = st.text_input(
-        "Ketik nama wilayah",
-        placeholder="Contoh: Agam, Padang, Solok...",
-        key="kata_cari",
-        help=(
-            "Ketik sebagian atau seluruh nama wilayah. "
-            "Tabel, grafik, dan peta akan mengikuti pencarian."
-        ),
+data_filter = data_filter[
+    data_filter["Kabupaten/Kota"].isin(
+        st.session_state["pilihan_wilayah"]
     )
+]
 
-    if kata_cari.strip():
-        hasil_pencarian = [
-            wilayah
-            for wilayah in semua_wilayah
-            if kata_cari.strip().casefold()
-            in wilayah.casefold()
-        ]
-    else:
-        hasil_pencarian = semua_wilayah
-
-    if kata_cari.strip() and not hasil_pencarian:
-        st.warning(
-            "Wilayah tidak ditemukan. Periksa ejaan "
-            "atau coba kata kunci yang lebih pendek."
-        )
-
-    wilayah_dipilih = st.multiselect(
-        "Pilih wilayah",
-        options=hasil_pencarian,
-        default=hasil_pencarian,
-        key="pilihan_wilayah",
-        help=(
-            "Pilih satu atau beberapa wilayah. "
-            "Kosongkan pilihan untuk tidak menampilkan wilayah."
-        ),
+data_filter = data_filter[
+    data_filter["Klaster"].isin(
+        st.session_state["pilihan_klaster"]
     )
-
-    klaster_dipilih = st.multiselect(
-        "Filter klaster",
-        options=semua_klaster,
-        default=semua_klaster,
-        format_func=lambda x: f"Klaster {x}",
-        key="pilihan_klaster",
-    )
-
-    if st.button("Reset pencarian dan filter", width="stretch"):
-        st.session_state["kata_cari"] = ""
-        st.session_state["pilihan_wilayah"] = semua_wilayah
-        st.session_state["pilihan_klaster"] = semua_klaster
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("### Informasi Penelitian")
-    st.caption("Metode: K-Means Clustering")
-    st.caption("Evaluasi: Davies-Bouldin Index (DBI)")
-    st.caption("Wilayah: 19 kabupaten/kota")
-    st.caption("Indikator: 9 indikator sosial ekonomi")
-
-# Filter utama untuk semua tab
-data_tampil = data_klaster[
-    data_klaster["Kabupaten/Kota"].isin(wilayah_dipilih)
-    & data_klaster["Klaster"].isin(klaster_dipilih)
-].copy()
+]
 
 # =========================================================
-# KARTU RINGKASAN
+# 11. NAVIGASI HALAMAN
 # =========================================================
-st.markdown(
-    '<div class="section-heading">Ringkasan Hasil Klasterisasi</div>',
-    unsafe_allow_html=True,
-)
 
-st.markdown(
-    '<div class="section-subtitle">'
-    'Ringkasan mengikuti pencarian dan filter yang dipilih.'
-    '</div>',
-    unsafe_allow_html=True,
-)
-
-k1, k2, k3, k4 = st.columns(4)
-
-k1.metric(
-    "Wilayah Ditampilkan",
-    data_tampil["Kabupaten/Kota"].nunique(),
-)
-
-k2.metric("Jumlah Indikator", 9)
-
-k3.metric(
-    "Klaster Ditampilkan",
-    data_tampil["Klaster"].nunique(),
-)
-
-k4.metric(
-    "K Optimal (DBI)",
-    k_optimal,
-    delta=(
-        f"DBI = {angka_id(dbi_terbaik)}"
-        if dbi_terbaik is not None
-        else None
-    ),
-)
-
-# =========================================================
-# TAB DASHBOARD
-# =========================================================
-(
-    tab_hasil,
-    tab_peta,
-    tab_distribusi,
-    tab_profil,
-    tab_pca,
-    tab_dbi,
-) = st.tabs(
+halaman = st.sidebar.radio(
+    "Navigasi",
     [
-        "📋 Hasil Klaster",
-        "🗺️ Peta Wilayah",
-        "📊 Distribusi",
-        "📈 Profil Indikator",
-        "🔵 Visualisasi PCA",
-        "🎯 Evaluasi DBI",
+        "Beranda",
+        "Hasil Klaster",
+        "Peta Klaster",
+        "Distribusi Klaster",
+        "Profil Klaster",
+        "Visualisasi PCA",
+        "Evaluasi DBI"
     ]
 )
 
 # =========================================================
-# TAB 1: HASIL KLASTER
+# 12. HALAMAN BERANDA
 # =========================================================
-with tab_hasil:
-    st.subheader("Hasil Pengelompokan Kabupaten/Kota")
 
-    if data_tampil.empty:
-        st.info(
-            "Tidak ada wilayah sesuai pencarian dan filter. "
-            "Ubah kata kunci atau pilih kembali filter."
-        )
-    else:
-        tabel = data_tampil.copy()
+if halaman == "Beranda":
 
-        st.dataframe(
-            tabel,
-            width="stretch",
-            hide_index=True,
+    st.subheader("Ringkasan Dashboard")
+
+    kolom1, kolom2, kolom3, kolom4 = st.columns(4)
+
+    with kolom1:
+        tampilkan_kartu(
+            "Jumlah Wilayah",
+            str(data_hasil["Kabupaten/Kota"].nunique())
         )
 
-        st.download_button(
-            "⬇️ Unduh hasil filter (CSV)",
-            data=tabel.to_csv(
-                index=False
-            ).encode("utf-8-sig"),
-            file_name="hasil_klaster_sumatera_barat.csv",
-            mime="text/csv",
+    with kolom2:
+        tampilkan_kartu(
+            "Jumlah Indikator",
+            "9"
         )
 
-# =========================================================
-# TAB 2: PETA WILAYAH
-# =========================================================
-with tab_peta:
-    st.subheader("Peta Persebaran Klaster Kabupaten/Kota")
+    with kolom3:
+        tampilkan_kartu(
+            "Jumlah Klaster",
+            str(data_hasil["Klaster"].nunique())
+        )
 
-    st.caption(
-        "Wilayah terpilih ditampilkan berdasarkan klaster. "
-        "Arahkan kursor ke peta untuk melihat nama wilayah."
+    with kolom4:
+        tampilkan_kartu(
+            "Nilai DBI Terbaik",
+            format_angka(dbi_terbaik, 4)
+        )
+
+    st.markdown("### Tentang Dashboard")
+
+    st.write(
+        "Dashboard ini menyajikan hasil klasterisasi kabupaten/kota "
+        "di Provinsi Sumatera Barat berdasarkan indikator sosial ekonomi "
+        "menggunakan algoritma K-Means. Hasil klaster dapat digunakan "
+        "untuk melihat kemiripan karakteristik antarwilayah."
     )
 
-    if not Path(FILE_ZIP_PETA).exists():
-        st.error(
-            f"File peta tidak ditemukan: {FILE_ZIP_PETA}. "
-            "Pastikan ZIP shapefile berada satu folder dengan app.py."
-        )
+    st.write(
+        "Penentuan jumlah klaster terbaik dilakukan dengan "
+        "Davies-Bouldin Index (DBI). Nilai DBI yang lebih kecil "
+        "menunjukkan hasil klaster yang lebih baik berdasarkan "
+        "kekompakan klaster dan pemisahan antarklaster."
+    )
 
-    elif data_tampil.empty:
-        st.info(
-            "Pilih minimal satu wilayah dan satu klaster "
-            "pada bagian filter."
+    st.markdown("### Ringkasan Anggota Klaster")
+
+    ringkasan = (
+        data_hasil.groupby("Klaster")["Kabupaten/Kota"]
+        .agg(["count", lambda x: ", ".join(sorted(x.astype(str)))])
+        .reset_index()
+    )
+
+    ringkasan.columns = ["Klaster", "Jumlah Wilayah", "Anggota Wilayah"]
+
+    st.dataframe(
+        ringkasan,
+        hide_index=True,
+        width="stretch"
+    )
+
+    st.caption(
+        "Gunakan menu Navigasi di sebelah kiri untuk melihat "
+        "hasil, peta, profil indikator, PCA, dan evaluasi DBI."
+    )
+
+# =========================================================
+# 13. HALAMAN HASIL KLASTER
+# =========================================================
+
+elif halaman == "Hasil Klaster":
+
+    st.subheader("Hasil Klasterisasi Kabupaten/Kota")
+
+    st.write(
+        "Tabel berikut menampilkan hasil pengelompokan wilayah. "
+        "Gunakan pencarian dan filter pada sidebar untuk mempersempit hasil."
+    )
+
+    st.metric("Wilayah yang Ditampilkan", len(data_filter))
+
+    kolom_tampil = [
+        kolom for kolom in data_filter.columns
+        if kolom != "_kunci"
+    ]
+
+    st.dataframe(
+        data_filter[kolom_tampil].sort_values("Kabupaten/Kota"),
+        hide_index=True,
+        width="stretch"
+    )
+
+    csv_hasil = data_filter[kolom_tampil].to_csv(
+        index=False
+    ).encode("utf-8-sig")
+
+    st.download_button(
+        "⬇️ Unduh Hasil Klaster (CSV)",
+        data=csv_hasil,
+        file_name="hasil_klaster_sumatera_barat.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+# =========================================================
+# 14. HALAMAN PETA KLASTER
+# =========================================================
+
+elif halaman == "Peta Klaster":
+
+    st.subheader("Peta Persebaran Klaster Kabupaten/Kota")
+
+    st.write(
+        "Warna pada peta menunjukkan klaster masing-masing wilayah: "
+        "hijau untuk Klaster 1, kuning untuk Klaster 2, dan merah "
+        "untuk Klaster 3."
+    )
+
+    if not os.path.exists(FILE_SHAPEFILE_ZIP):
+        st.error(
+            f"File '{FILE_SHAPEFILE_ZIP}' tidak ditemukan. "
+            "Unggah ZIP shapefile kabupaten/kota Sumatera Barat "
+            "ke repositori GitHub yang sama dengan app.py."
         )
 
     else:
         try:
-            with tempfile.TemporaryDirectory() as folder_sementara:
-                with zipfile.ZipFile(FILE_ZIP_PETA) as berkas_zip:
-                    berkas_zip.extractall(folder_sementara)
+            peta, geojson = muat_shapefile(FILE_SHAPEFILE_ZIP)
 
-                daftar_shp = list(
-                    Path(folder_sementara).rglob("*.shp")
+            gabungan = peta.merge(
+                data_hasil[["_kunci", "Klaster", "Kabupaten/Kota"]],
+                on="_kunci",
+                how="left"
+            )
+
+            gabungan["Label_Klaster"] = gabungan["Klaster"].apply(
+                lambda x: f"Klaster {int(x)}"
+                if pd.notna(x) else "Tidak ada data"
+            )
+
+            # Gunakan kunci yang konsisten antara peta dan data.
+            geojson_peta = json.loads(gabungan.to_json())
+
+            # Pastikan fitur GeoJSON memakai kunci wilayah yang sama.
+            for fitur in geojson_peta["features"]:
+                props = fitur.get("properties", {})
+                props["_kunci"] = normalisasi_nama(
+                    props.get("Nama_Peta", "")
                 )
 
-                if not daftar_shp:
-                    st.error(
-                        "ZIP tidak berisi file SHP. "
-                        "Pastikan ZIP mencakup file .shp, .shx, .dbf, dan .prj."
+            kunci_dipilih = set(data_filter["_kunci"].tolist())
+
+            # Wilayah yang tidak dipilih tetap terlihat abu-abu pada peta.
+            for fitur in geojson_peta["features"]:
+                props = fitur.setdefault("properties", {})
+                kunci = props.get("_kunci", "")
+
+                baris_wilayah = data_hasil[
+                    data_hasil["_kunci"] == kunci
+                ]
+
+                if kunci not in kunci_dipilih or baris_wilayah.empty:
+                    props["Klaster_Tampilan"] = "Tidak dipilih"
+                    props["Nama_Tampilan"] = props.get(
+                        "Nama_Peta", kunci
                     )
                 else:
-                    # Utamakan shapefile poligon kabupaten/kota.
-                    shp_path = next(
-                        (
-                            p for p in daftar_shp
-                            if p.name.lower().endswith("_pl.shp")
-                        ),
-                        daftar_shp[0],
-                    )
+                    nomor = int(baris_wilayah.iloc[0]["Klaster"])
+                    props["Klaster_Tampilan"] = f"Klaster {nomor}"
+                    props["Nama_Tampilan"] = baris_wilayah.iloc[0][
+                        "Kabupaten/Kota"
+                    ]
 
-                    gdf = gpd.read_file(
-                        shp_path,
-                        engine="pyogrio",
-                    )
+            warna_peta = {
+                "Klaster 1": WARNA_KLASTER[1],
+                "Klaster 2": WARNA_KLASTER[2],
+                "Klaster 3": WARNA_KLASTER[3],
+                "Tidak dipilih": "#D5DCE5"
+            }
 
-                    kolom_nama_peta = cari_kolom(
-                        gdf,
-                        [
-                            "kab_kota",
-                            "Kabupaten/Kota",
-                            "Kabupaten_Kota",
-                            "WADMKK",
-                            "NAMOBJ",
-                        ],
-                    )
-
-                    if kolom_nama_peta is None:
-                        st.error(
-                            "Kolom nama wilayah tidak ditemukan "
-                            f"pada shapefile. Kolom yang tersedia: "
-                            f"{', '.join(map(str, gdf.columns))}"
-                        )
-                    else:
-                        if gdf.crs is not None:
-                            gdf = gdf.to_crs(epsg=4326)
-
-                        gdf["_nama_peta"] = (
-                            gdf[kolom_nama_peta]
-                            .astype(str)
-                            .str.strip()
-                        )
-
-                        # Kunci nama dibuat sama untuk data dan peta.
-                        # Contoh: Kabupaten Agam dan Agam menjadi "agam".
-                        gdf["_kunci"] = gdf["_nama_peta"].apply(
-                            normalisasi_nama
-                        )
-
-                        dp = data_tampil.copy()
-                        dp["_kunci"] = dp[
-                            "Kabupaten/Kota"
-                        ].apply(normalisasi_nama)
-
-                        # Data klaster digabung ke poligon peta.
-                        gdf_join = gdf.merge(
-                            dp[
-                                [
-                                    "_kunci",
-                                    "Kabupaten/Kota",
-                                    "Klaster",
-                                ]
-                            ],
-                            on="_kunci",
-                            how="left",
-                            validate="many_to_one",
-                        )
-
-                        gdf_join["Klaster"] = (
-                            gdf_join["Klaster"]
-                            .fillna("Tidak dipilih")
-                        )
-
-                        gdf_join = gdf_join.reset_index(drop=True)
-                        gdf_join["_map_id"] = (
-                            gdf_join.index.astype(str)
-                        )
-
-                        # GeoJSON disimpan dalam memori untuk Plotly.
-                        geojson_semua = json.loads(
-                            gdf_join.to_json()
-                        )
-
-                        batas = gdf_join.total_bounds
-                        tengah = {
-                            "lon": float(
-                                (batas[0] + batas[2]) / 2
-                            ),
-                            "lat": float(
-                                (batas[1] + batas[3]) / 2
-                            ),
-                        }
-
-                        fig_peta = go.Figure()
-
-                        urutan_peta = (
-                            urut_klaster(
-                                gdf_join.loc[
-                                    gdf_join["Klaster"] != "Tidak dipilih",
-                                    "Klaster",
-                                ].unique()
-                            )
-                            + ["Tidak dipilih"]
-                        )
-
-                        for klaster in urutan_peta:
-                            subset = gdf_join[
-                                gdf_join["Klaster"] == klaster
-                            ]
-
-                            if subset.empty:
-                                continue
-
-                            geojson_subset = json.loads(
-                                subset.to_json()
-                            )
-
-                            warna = WARNA_KLASTER.get(
-                                str(klaster),
-                                WARNA_TIDAK_DIPILIH,
-                            )
-
-                            fig_peta.add_trace(
-                                go.Choroplethmap(
-                                    geojson=geojson_subset,
-                                    locations=subset[
-                                        "_map_id"
-                                    ].tolist(),
-                                    z=[1] * len(subset),
-                                    featureidkey="properties._map_id",
-                                    colorscale=[
-                                        [0, warna],
-                                        [1, warna],
-                                    ],
-                                    showscale=False,
-                                    marker_opacity=(
-                                        0.85
-                                        if klaster != "Tidak dipilih"
-                                        else 0.35
-                                    ),
-                                    marker_line_width=1,
-                                    marker_line_color="#FFFFFF",
-                                    name=(
-                                        f"Klaster {klaster}"
-                                        if klaster != "Tidak dipilih"
-                                        else "Tidak dipilih"
-                                    ),
-                                    customdata=subset[
-                                        ["_nama_peta", "Klaster"]
-                                    ].to_numpy(),
-                                    hovertemplate=(
-                                        "<b>%{customdata[0]}</b>"
-                                        "<br>%{customdata[1]}"
-                                        "<extra></extra>"
-                                    ),
-                                )
-                            )
-
-                        fig_peta.update_layout(
-                            map={
-                                "style": "open-street-map",
-                                "center": tengah,
-                                "zoom": 6.2,
-                            },
-                            height=620,
-                            margin={
-                                "l": 0,
-                                "r": 0,
-                                "t": 25,
-                                "b": 0,
-                            },
-                            legend={
-                                "title": "Hasil Klaster",
-                                "orientation": "h",
-                                "y": 1.02,
-                                "x": 0,
-                            },
-                            paper_bgcolor="white",
-                            plot_bgcolor="white",
-                        )
-
-                        st.plotly_chart(
-                            fig_peta,
-                            width="stretch",
-                            config={"scrollZoom": True},
-                        )
-
-                        c1, c2, c3 = st.columns(3)
-                        c1.markdown("🟢 **Klaster 1**")
-                        c2.markdown("🟡 **Klaster 2**")
-                        c3.markdown("🔴 **Klaster 3**")
-
-                        tidak_cocok = gdf_join[
-                            (gdf_join["Klaster"] == "Tidak dipilih")
-                            & (
-                                gdf_join["_kunci"].isin(
-                                    dp["_kunci"]
-                                )
-                            )
-                        ]["_nama_peta"].tolist()
-
-                        if tidak_cocok:
-                            st.warning(
-                                "Ada nama wilayah yang belum cocok "
-                                "antara peta dan data: "
-                                + ", ".join(tidak_cocok)
-                            )
-
-        except Exception as error:
-            st.error(
-                "Peta gagal dimuat. Periksa ZIP shapefile, "
-                "nama kolom wilayah, dan dependensi geopandas/pyogrio."
+            fig_peta = px.choropleth_map(
+                gabungan,
+                geojson=geojson_peta,
+                locations="_kunci",
+                featureidkey="properties._kunci",
+                color="Label_Klaster",
+                hover_name="Nama_Peta",
+                hover_data={
+                    "Klaster": True,
+                    "_kunci": False,
+                    "Label_Klaster": False
+                },
+                color_discrete_map={
+                    "Klaster 1": WARNA_KLASTER[1],
+                    "Klaster 2": WARNA_KLASTER[2],
+                    "Klaster 3": WARNA_KLASTER[3],
+                    "Tidak ada data": "#D5DCE5"
+                },
+                map_style="open-street-map",
+                center={"lat": -0.7399, "lon": 100.8000},
+                zoom=6.2,
+                opacity=0.65
             )
-            st.code(str(error))
+
+            # Samakan warna kategori dan tampilkan batas wilayah.
+            fig_peta.update_traces(
+                marker_line_color="white",
+                marker_line_width=1
+            )
+
+            fig_peta.update_layout(
+                height=650,
+                margin={"r": 0, "t": 10, "l": 0, "b": 0},
+                legend_title_text="Klaster",
+                paper_bgcolor="white"
+            )
+
+            st.plotly_chart(
+                fig_peta,
+                width="stretch"
+            )
+
+            st.caption(
+                "Peta menggunakan batas wilayah dari shapefile yang tersedia. "
+                "Jika nama wilayah pada Excel berbeda dari shapefile, "
+                "periksa kesesuaian nama wilayah tersebut."
+            )
+
+            daftar_cocok = set(peta["_kunci"].tolist())
+            daftar_data = set(data_hasil["_kunci"].tolist())
+            belum_cocok = sorted(daftar_data - daftar_cocok)
+
+            if belum_cocok:
+                st.warning(
+                    "Nama wilayah berikut belum cocok dengan shapefile: "
+                    + ", ".join(belum_cocok)
+                )
+
+        except Exception as kesalahan:
+            st.error(f"Peta gagal ditampilkan: {kesalahan}")
+            st.info(
+                "Pastikan ZIP berisi shapefile lengkap (.shp, .shx, "
+                ".dbf, dan .prj) serta memiliki kolom nama kabupaten/kota."
+            )
 
 # =========================================================
-# TAB 3: DISTRIBUSI KLASTER
+# 15. HALAMAN DISTRIBUSI KLASTER
 # =========================================================
-with tab_distribusi:
-    st.subheader("Distribusi Wilayah per Klaster")
 
-    if data_tampil.empty:
-        st.info("Tidak ada data untuk ditampilkan.")
+elif halaman == "Distribusi Klaster":
+
+    st.subheader("Distribusi Jumlah Wilayah per Klaster")
+
+    distribusi = (
+        data_filter.groupby("Klaster")["Kabupaten/Kota"]
+        .nunique()
+        .reset_index(name="Jumlah Wilayah")
+    )
+
+    distribusi["Nama Klaster"] = distribusi["Klaster"].apply(
+        lambda x: f"Klaster {x}"
+    )
+
+    distribusi["Warna"] = distribusi["Klaster"].map(WARNA_KLASTER)
+
+    if distribusi.empty:
+        st.warning("Tidak ada wilayah yang sesuai dengan filter.")
     else:
-        distribusi = (
-            data_tampil.groupby("Klaster")["Kabupaten/Kota"]
-            .nunique()
-            .reset_index(name="Jumlah Wilayah")
-        )
-
-        distribusi["Klaster"] = (
-            distribusi["Klaster"].astype(str)
-        )
-        distribusi["Nama Klaster"] = distribusi[
-            "Klaster"
-        ].map(lambda x: f"Klaster {x}")
-
         fig_distribusi = px.bar(
             distribusi,
             x="Nama Klaster",
             y="Jumlah Wilayah",
-            color="Klaster",
+            color="Nama Klaster",
             text="Jumlah Wilayah",
-            color_discrete_map=WARNA_KLASTER,
-            category_orders={
-                "Klaster": urut_klaster(
-                    distribusi["Klaster"].unique()
-                )
+            color_discrete_map={
+                f"Klaster {k}": v for k, v in WARNA_KLASTER.items()
             },
+            labels={
+                "Nama Klaster": "Klaster",
+                "Jumlah Wilayah": "Jumlah Kabupaten/Kota"
+            }
         )
 
         fig_distribusi.update_traces(
-            textposition="outside",
-            cliponaxis=False,
+            textposition="outside"
         )
 
         fig_distribusi.update_layout(
-            height=420,
             showlegend=False,
+            height=450,
             paper_bgcolor="white",
-            plot_bgcolor="white",
-            yaxis_title="Jumlah Kabupaten/Kota",
-            xaxis_title="",
+            plot_bgcolor="white"
         )
 
         st.plotly_chart(
             fig_distribusi,
-            width="stretch",
+            width="stretch"
         )
 
-        for klaster in urut_klaster(
-            data_tampil["Klaster"].unique()
-        ):
-            daftar_wilayah = data_tampil.loc[
-                data_tampil["Klaster"] == klaster,
-                "Kabupaten/Kota",
-            ].tolist()
+        st.markdown("### Anggota Setiap Klaster")
 
-            with st.expander(
-                f"Klaster {klaster} — {len(daftar_wilayah)} wilayah"
-            ):
-                for wilayah in daftar_wilayah:
-                    st.write(f"• {wilayah}")
+        for nomor in sorted(data_filter["Klaster"].unique()):
+            anggota = sorted(
+                data_filter.loc[
+                    data_filter["Klaster"] == nomor,
+                    "Kabupaten/Kota"
+                ].tolist()
+            )
+
+            st.markdown(
+                f"**Klaster {nomor} — {len(anggota)} wilayah**"
+            )
+
+            st.write(", ".join(anggota) if anggota else "-")
 
 # =========================================================
-# TAB 4: PROFIL INDIKATOR
+# 16. HALAMAN PROFIL KLASTER
 # =========================================================
-with tab_profil:
+
+elif halaman == "Profil Klaster":
+
     st.subheader("Profil Indikator Setiap Klaster")
 
-    if data_profil.empty:
+    if profil.empty:
         st.warning(
-            "Sheet Profil_Klaster tidak tersedia atau kosong."
+            f"Sheet '{SHEET_PROFIL}' tidak tersedia atau tidak berisi data."
         )
     else:
+        profil_tampil = profil.copy()
+
         kolom_klaster_profil = cari_kolom(
-            data_profil,
-            ["Klaster", "Cluster", "Nama Klaster"],
+            profil_tampil,
+            ["Klaster", "Cluster", "Nama Klaster"]
         )
 
         if kolom_klaster_profil is None:
-            st.warning(
-                "Kolom Klaster tidak ditemukan pada sheet Profil_Klaster."
-            )
-        else:
-            profil = data_profil.rename(
+            # Jika label klaster tersimpan sebagai indeks.
+            if (
+                profil_tampil.columns.size > 0
+                and str(profil_tampil.columns[0]).lower().startswith("unnamed")
+            ):
+                profil_tampil = profil_tampil.rename(
+                    columns={profil_tampil.columns[0]: "Klaster"}
+                )
+            elif profil_tampil.index.name is not None:
+                profil_tampil = profil_tampil.reset_index()
+                kolom_klaster_profil = cari_kolom(
+                    profil_tampil,
+                    ["Klaster", "Cluster", "Nama Klaster"]
+                )
+
+        if kolom_klaster_profil is not None:
+            profil_tampil = profil_tampil.rename(
                 columns={kolom_klaster_profil: "Klaster"}
-            ).copy()
-
-            profil["Klaster"] = (
-                profil["Klaster"]
-                .astype(str)
-                .str.extract(r"(\d+)", expand=False)
             )
 
-            profil = profil[
-                profil["Klaster"].isin(klaster_dipilih)
-            ]
+        st.write(
+            "Tabel dan grafik berikut menampilkan nilai indikator "
+            "berdasarkan klaster sesuai data pada file Excel."
+        )
 
-            kolom_numerik = [
-                kolom
-                for kolom in profil.select_dtypes(
-                    include="number"
-                ).columns
-                if kolom != "Klaster"
-            ]
+        st.dataframe(
+            profil_tampil,
+            hide_index=True,
+            width="stretch"
+        )
 
-            if profil.empty:
-                st.info(
-                    "Tidak ada profil yang sesuai dengan filter klaster."
+        kolom_numerik = profil_tampil.select_dtypes(
+            include=np.number
+        ).columns.tolist()
+
+        kolom_numerik = [
+            c for c in kolom_numerik
+            if c.lower() not in ["k", "jumlah wilayah", "count"]
+        ]
+
+        if kolom_numerik:
+            indikator_pilihan = st.selectbox(
+                "Pilih indikator untuk dibandingkan",
+                options=kolom_numerik
+            )
+
+            kolom_label = cari_kolom(
+                profil_tampil,
+                ["Klaster", "Cluster", "Nama Klaster"]
+            )
+
+            if kolom_label is not None:
+                fig_profil = px.bar(
+                    profil_tampil,
+                    x=kolom_label,
+                    y=indikator_pilihan,
+                    color=kolom_label,
+                    title=f"Perbandingan {indikator_pilihan} antar Klaster"
+                )
+
+                fig_profil.update_layout(
+                    height=430,
+                    paper_bgcolor="white",
+                    plot_bgcolor="white",
+                    showlegend=False
+                )
+
+                st.plotly_chart(
+                    fig_profil,
+                    width="stretch"
                 )
             else:
-                st.dataframe(
-                    profil,
-                    width="stretch",
-                    hide_index=True,
+                st.info(
+                    "Kolom label klaster tidak ditemukan sehingga "
+                    "grafik perbandingan tidak dapat dibuat."
                 )
-
-                if kolom_numerik:
-                    indikator = st.selectbox(
-                        "Pilih indikator untuk dibandingkan",
-                        options=kolom_numerik,
-                    )
-
-                    fig_profil = px.bar(
-                        profil,
-                        x="Klaster",
-                        y=indikator,
-                        color="Klaster",
-                        text_auto=".3f",
-                        color_discrete_map=WARNA_KLASTER,
-                    )
-
-                    fig_profil.update_layout(
-                        height=420,
-                        paper_bgcolor="white",
-                        plot_bgcolor="white",
-                        showlegend=False,
-                        xaxis_title="",
-                        yaxis_title=indikator,
-                    )
-
-                    st.plotly_chart(
-                        fig_profil,
-                        width="stretch",
-                    )
-
-                    st.caption(
-                        "Nilai indikator yang lebih tinggi tidak selalu "
-                        "menunjukkan kondisi lebih baik. Interpretasi "
-                        "bergantung pada jenis indikator."
-                    )
+        else:
+            st.info(
+                "Tidak ditemukan kolom numerik yang dapat digunakan "
+                "untuk membuat grafik profil."
+            )
 
 # =========================================================
-# TAB 5: VISUALISASI PCA
+# 17. HALAMAN VISUALISASI PCA
 # =========================================================
-with tab_pca:
-    st.subheader("Visualisasi Persebaran Wilayah dengan PCA")
 
-    st.caption(
-        "PCA digunakan untuk memvisualisasikan titik wilayah "
-        "dalam dua dimensi. Penentuan klaster tetap dilakukan "
-        "menggunakan algoritma K-Means."
+elif halaman == "Visualisasi PCA":
+
+    st.subheader("Visualisasi Persebaran Wilayah Menggunakan PCA")
+
+    st.write(
+        "PCA digunakan untuk memvisualisasikan persebaran wilayah "
+        "dalam dua dimensi. Visualisasi ini membantu melihat posisi "
+        "relatif wilayah berdasarkan hasil transformasi komponen utama, "
+        "bukan sebagai dasar penentuan jumlah klaster."
     )
 
-    if data_pca.empty:
+    if pca.empty:
         st.warning(
-            "Sheet Koordinat_PCA belum tersedia atau kosong."
+            f"Sheet '{SHEET_PCA}' tidak tersedia atau tidak berisi data."
         )
     else:
+        pca_tampil = pca.copy()
+
+        kolom_wilayah_pca = cari_kolom(
+            pca_tampil,
+            ["Kabupaten/Kota", "Kabupaten_Kota", "kab_kota", "nama", "wilayah"]
+        )
+
         kolom_pc1 = cari_kolom(
-            data_pca,
-            ["PC1", "PCA1", "Principal Component 1", "Komponen 1"],
+            pca_tampil,
+            ["PC1", "PCA1", "Komponen 1", "Principal Component 1"]
         )
 
         kolom_pc2 = cari_kolom(
-            data_pca,
-            ["PC2", "PCA2", "Principal Component 2", "Komponen 2"],
+            pca_tampil,
+            ["PC2", "PCA2", "Komponen 2", "Principal Component 2"]
         )
 
         kolom_klaster_pca = cari_kolom(
-            data_pca,
-            ["Klaster", "Cluster", "Label Klaster"],
+            pca_tampil,
+            ["Klaster", "Cluster", "Cluster_Label"]
         )
 
-        kolom_wilayah_pca = cari_kolom(
-            data_pca,
-            [
-                "Kabupaten/Kota",
-                "Kabupaten_Kota",
-                "kab_kota",
-                "Wilayah",
-                "Daerah",
-            ],
-        )
+        if kolom_wilayah_pca is not None:
+            pca_tampil = pca_tampil.rename(
+                columns={kolom_wilayah_pca: "Kabupaten/Kota"}
+            )
+
+        if kolom_pc1 is not None:
+            pca_tampil = pca_tampil.rename(columns={kolom_pc1: "PC1"})
+
+        if kolom_pc2 is not None:
+            pca_tampil = pca_tampil.rename(columns={kolom_pc2: "PC2"})
+
+        if kolom_klaster_pca is not None:
+            pca_tampil = pca_tampil.rename(
+                columns={kolom_klaster_pca: "Klaster"}
+            )
 
         if (
-            kolom_pc1 is None
-            or kolom_pc2 is None
-            or kolom_klaster_pca is None
+            "Kabupaten/Kota" in pca_tampil.columns
+            and "PC1" in pca_tampil.columns
+            and "PC2" in pca_tampil.columns
         ):
-            st.warning(
-                "Kolom PC1, PC2, atau Klaster tidak ditemukan "
-                "pada sheet Koordinat_PCA."
-            )
-        else:
-            pca = data_pca.copy()
-
-            pca[kolom_pc1] = pd.to_numeric(
-                pca[kolom_pc1],
-                errors="coerce",
-            )
-            pca[kolom_pc2] = pd.to_numeric(
-                pca[kolom_pc2],
-                errors="coerce",
+            pca_tampil["PC1"] = pd.to_numeric(
+                pca_tampil["PC1"], errors="coerce"
             )
 
-            pca[kolom_klaster_pca] = (
-                pca[kolom_klaster_pca]
-                .astype(str)
-                .str.extract(r"(\d+)", expand=False)
+            pca_tampil["PC2"] = pd.to_numeric(
+                pca_tampil["PC2"], errors="coerce"
             )
 
-            pca = pca.dropna(
-                subset=[
-                    kolom_pc1,
-                    kolom_pc2,
-                    kolom_klaster_pca,
-                ]
+            pca_tampil = pca_tampil.dropna(
+                subset=["PC1", "PC2"]
             )
 
-            pca = pca[
-                pca[kolom_klaster_pca].isin(klaster_dipilih)
+            pca_tampil["_kunci"] = pca_tampil[
+                "Kabupaten/Kota"
+            ].apply(normalisasi_nama)
+
+            if "Klaster" not in pca_tampil.columns:
+                pca_tampil = pca_tampil.merge(
+                    data_hasil[["_kunci", "Klaster"]],
+                    on="_kunci",
+                    how="left"
+                )
+
+            pca_tampil["Klaster"] = pd.to_numeric(
+                pca_tampil["Klaster"], errors="coerce"
+            )
+
+            pca_filter = pca_tampil[
+                pca_tampil["_kunci"].isin(data_filter["_kunci"])
             ]
 
-            if kolom_wilayah_pca is not None:
-                nama_terpilih = {
-                    normalisasi_nama(wilayah)
-                    for wilayah in wilayah_dipilih
-                }
-
-                pca = pca[
-                    pca[kolom_wilayah_pca]
-                    .apply(normalisasi_nama)
-                    .isin(nama_terpilih)
-                ]
-
-            if pca.empty:
-                st.info(
-                    "Tidak ada titik PCA yang sesuai dengan filter."
+            if pca_filter.empty:
+                st.warning(
+                    "Tidak ada titik PCA yang sesuai dengan filter saat ini."
                 )
             else:
-                fig_pca = px.scatter(
-                    pca,
-                    x=kolom_pc1,
-                    y=kolom_pc2,
-                    color=kolom_klaster_pca,
-                    color_discrete_map=WARNA_KLASTER,
-                    hover_name=(
-                        kolom_wilayah_pca
-                        if kolom_wilayah_pca is not None
-                        else None
-                    ),
-                    labels={
-                        kolom_pc1: "Komponen Utama 1 (PC1)",
-                        kolom_pc2: "Komponen Utama 2 (PC2)",
-                        kolom_klaster_pca: "Klaster",
-                    },
+                pca_filter = pca_filter.copy()
+                pca_filter["Nama Klaster"] = pca_filter["Klaster"].apply(
+                    lambda x: f"Klaster {int(x)}"
+                    if pd.notna(x) else "Tidak diketahui"
                 )
 
-                fig_pca.update_traces(
-                    marker={
-                        "size": 13,
-                        "line": {
-                            "width": 1,
-                            "color": "white",
-                        },
+                warna_pca = {
+                    f"Klaster {k}": v
+                    for k, v in WARNA_KLASTER.items()
+                }
+
+                fig_pca = px.scatter(
+                    pca_filter,
+                    x="PC1",
+                    y="PC2",
+                    color="Nama Klaster",
+                    color_discrete_map=warna_pca,
+                    hover_name="Kabupaten/Kota",
+                    title="Persebaran Kabupaten/Kota Berdasarkan Komponen Utama",
+                    labels={
+                        "PC1": "Komponen Utama 1 (PC1)",
+                        "PC2": "Komponen Utama 2 (PC2)"
                     }
                 )
 
+                fig_pca.update_traces(
+                    marker=dict(size=13, line=dict(width=1, color="white"))
+                )
+
                 fig_pca.update_layout(
-                    height=540,
+                    height=580,
                     paper_bgcolor="white",
-                    plot_bgcolor="white",
+                    plot_bgcolor="white"
                 )
 
                 st.plotly_chart(
                     fig_pca,
-                    width="stretch",
+                    width="stretch"
                 )
 
-# =========================================================
-# TAB 6: EVALUASI DBI
-# =========================================================
-with tab_dbi:
-    st.subheader("Evaluasi Jumlah Klaster Menggunakan DBI")
+                st.dataframe(
+                    pca_filter.drop(columns=["_kunci", "Nama Klaster"]),
+                    hide_index=True,
+                    width="stretch"
+                )
 
-    st.caption(
-        "Nilai DBI yang lebih kecil secara umum menunjukkan "
-        "klaster yang lebih kompak dan terpisah."
+        else:
+            st.error(
+                "Kolom wilayah, PC1, atau PC2 tidak ditemukan pada sheet "
+                "Koordinat_PCA. Periksa kembali nama kolom di file Excel."
+            )
+
+# =========================================================
+# 18. HALAMAN EVALUASI DBI
+# =========================================================
+
+elif halaman == "Evaluasi DBI":
+
+    st.subheader("Evaluasi Davies-Bouldin Index (DBI)")
+
+    st.write(
+        "Davies-Bouldin Index digunakan untuk mengevaluasi hasil "
+        "klasterisasi. Nilai DBI yang lebih kecil menunjukkan "
+        "hasil pengelompokan yang lebih baik berdasarkan kekompakan "
+        "anggota dalam klaster dan pemisahan antarklaster."
     )
 
-    if (
-        data_dbi.empty
-        or kolom_k is None
-        or kolom_dbi is None
-    ):
-        st.warning(
-            "Periksa sheet Evaluasi_DBI. "
-            "Kolom K dan DBI harus tersedia."
-        )
-    else:
-        fig_dbi = px.line(
-            data_dbi,
-            x=kolom_k,
-            y=kolom_dbi,
-            markers=True,
-            labels={
-                kolom_k: "Jumlah Klaster (K)",
-                kolom_dbi: "Davies-Bouldin Index (DBI)",
-            },
+    kolom1, kolom2 = st.columns(2)
+
+    with kolom1:
+        st.metric(
+            "Jumlah Klaster Terbaik",
+            f"K = {k_optimal}"
         )
 
-        fig_dbi.update_traces(
-            line={
-                "color": BIRU_AKSI,
-                "width": 3,
-            },
-            marker={
-                "size": 10,
-                "color": BIRU_TUA,
-            },
+    with kolom2:
+        st.metric(
+            "Nilai DBI Terbaik",
+            format_angka(dbi_terbaik, 4)
+        )
+
+    if evaluasi_dbi.empty:
+        st.warning("Data evaluasi DBI tidak tersedia.")
+    else:
+        st.markdown("### Grafik Nilai DBI untuk Setiap K")
+
+        fig_dbi = go.Figure()
+
+        fig_dbi.add_trace(
+            go.Scatter(
+                x=evaluasi_dbi["K"],
+                y=evaluasi_dbi["DBI"],
+                mode="lines+markers",
+                name="Nilai DBI",
+                line=dict(color=WARNA_BIRU, width=3),
+                marker=dict(size=9)
+            )
+        )
+
+        fig_dbi.add_trace(
+            go.Scatter(
+                x=[k_optimal],
+                y=[dbi_terbaik],
+                mode="markers",
+                name="DBI Terbaik",
+                marker=dict(
+                    color="#E74C3C",
+                    size=15,
+                    symbol="star"
+                )
+            )
         )
 
         fig_dbi.update_layout(
-            height=440,
+            xaxis_title="Jumlah Klaster (K)",
+            yaxis_title="Davies-Bouldin Index",
+            height=470,
             paper_bgcolor="white",
             plot_bgcolor="white",
+            legend_title_text="Keterangan"
         )
 
         st.plotly_chart(
             fig_dbi,
-            width="stretch",
+            width="stretch"
+        )
+
+        st.markdown("### Tabel Evaluasi DBI")
+
+        tabel_dbi = evaluasi_dbi.copy()
+
+        tabel_dbi["Status"] = tabel_dbi["K"].apply(
+            lambda k: "K terbaik" if int(k) == k_optimal else ""
         )
 
         st.dataframe(
-            data_dbi,
-            width="stretch",
+            tabel_dbi,
             hide_index=True,
+            width="stretch"
         )
 
-        if dbi_terbaik is not None:
-            st.success(
-                f"K terbaik berdasarkan DBI terkecil adalah "
-                f"K = {k_optimal}, dengan DBI = "
-                f"{angka_id(dbi_terbaik)}."
-            )
+        csv_dbi = tabel_dbi.to_csv(
+            index=False
+        ).encode("utf-8-sig")
 
         st.download_button(
-            "⬇️ Unduh evaluasi DBI (CSV)",
-            data=data_dbi.to_csv(
-                index=False
-            ).encode("utf-8-sig"),
+            "⬇️ Unduh Evaluasi DBI (CSV)",
+            data=csv_dbi,
             file_name="evaluasi_dbi_sumatera_barat.csv",
             mime="text/csv",
+            use_container_width=True
         )
 
 # =========================================================
-# FOOTER
+# 19. FOOTER
 # =========================================================
+
+st.markdown("---")
+
 st.markdown(
     """
-    <div class="footer-box">
-        Dashboard Penelitian · Klasterisasi Indikator Sosial Ekonomi
-        Provinsi Sumatera Barat · K-Means & DBI
+    <div style="text-align:center; color:#65758B; font-size:13px;">
+        Dashboard Klasterisasi Indikator Sosial Ekonomi
+        <br>
+        Provinsi Sumatera Barat | K-Means Clustering
     </div>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
