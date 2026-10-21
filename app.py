@@ -424,23 +424,29 @@ if (
         dbi_terbaik = float(terbaik[kolom_dbi])
 
 # =========================================================
-# HEADER: RUMAH GADANG DI SISI KIRI ATAS
-# =========================================================
-kolom_gambar, kolom_judul = st.columns(
-    [0.85, 2.15],
-    gap="large",
-    vertical_alignment="center",
-)
+# HEADER DASHBOARD
+col_logo, col_judul = st.columns([1, 5], vertical_alignment="center")
 
-with kolom_gambar:
-    try:
-        st.image(
-            "https://commons.wikimedia.org/wiki/Special:FilePath/Rumah_Gadang_Suku_Minang.jpg",
-            width="stretch",
-        )
-        st.caption("Rumah Gadang · Ikon budaya Minangkabau")
-    except Exception:
-        st.markdown("## 🏠 Rumah Gadang")
+with col_logo:
+    st.image(
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Rumah_Gadang_Suku_Minang.jpg",
+        width=110
+    )
+
+with col_judul:
+    st.markdown(
+        """
+        <h1 style="color:#1976D2; margin-bottom:0;">
+            🏠 Dashboard Sumbar
+        </h1>
+        <p style="font-size:18px; margin-top:4px; color:#555;">
+            Klasterisasi Indikator Sosial Ekonomi
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+
+st.markdown("---")
 
 with kolom_judul:
     st.markdown(
